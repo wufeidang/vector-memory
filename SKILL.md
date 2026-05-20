@@ -84,6 +84,49 @@ python vector_memory.py create name=新集合
 python vector_memory.py restore backup=backup_20260520_200000
 ```
 
+## 自动集成规则（Hermes 对话自动调用）
+
+当对话涉及以下话题时，**自动搜索 Vector-Memory** 获取相关上下文，无需用户显式要求：
+
+### 🔍 自动搜索触发条件
+
+| 用户提到 | 自动执行 | 示例 |
+|---------|---------|------|
+| 设备型号、品牌 | `search_memories({"text": "型号"})` | "海康摄像机老是掉线" → 搜相关故障记录 |
+| 故障现象 | `search_memories({"text": "现象"})` | "画面一直卡顿" → 搜网络/录像相关 |
+| 维修经验 | `search_memories({"text": "关键词"})` | "之前那个消防泵问题" → 搜消防相关 |
+| 技术参数 | `search_memories({"text": "参数"})` | "POE供电距离" → 搜供电相关 |
+| 项目名称 | 对应集合搜索 | "监控项目/消防项目" → 切集合后搜 |
+
+### 📝 自动保存触发条件
+
+| 用户说 | 自动执行 | 示例 |
+|-------|---------|------|
+| 分享故障处理步骤 | `add_memory({"text": "步骤"})` | "上次换硬盘的方法是..." |
+| 提到具体参数 | `add_memory({"text": "参数"})` | "这个型号支持POE+" |
+| 经验总结 | `add_memory({"text": "经验"})` | "注意POE网线不能超过100米" |
+
+### 💡 搜索结果呈现方式
+
+搜索结果自动融入对话，**不打断流畅性**：
+
+```
+用户：海康摄像头画面一直闪怎么办？
+助手（自动搜索后）：我之前记过一条类似记录：海康DS-2CD系列画面闪烁，
+检查电源适配器输出是否稳定，常见原因是12V电源老化导致纹波过大。
+```
+
+### 🔗 自动关联
+
+当发现当前讨论与已存记忆相关时，自动提示关联：
+
+```
+助手：这条记录我帮你关联到之前那篇「POE供电故障排查」的文章，
+方便以后一起查到。
+```
+
+---
+
 ## 性能优化
 
 1. **模型预加载**：修改 Hermes_Gateway.cmd，启动前调用 `~/.hermes/scripts/preload_models.py`。搜索速度：首次~2.5s → 后续 **0.4-0.6s**。
@@ -93,6 +136,9 @@ python vector_memory.py restore backup=backup_20260520_200000
 3. **增量 TF-IDF**：内置 `_rebuild_tfidf_if_needed()` 自动管理，无需手动触发。
 
 ## ⚠️ 常见陷阱（精简）
+
+### 0. CI/CD 推送
+`~/.hermes/skills/vector_memory/` 已初始化为 git 仓库。推送至 GitHub 见 `references/cicd-setup.md`。
 
 ### 1. 默认集合名
 旧数据在 `memories`（带 s）集合中，core.py 的 `_current_collection_name` 必须一致。
@@ -129,6 +175,79 @@ pytest ~/.hermes/skills/vector_memory/scripts/test_vector_memory.py -v
 ```
 
 覆盖：Core（版本/锁）→ Collections（创建/删除/重复）→ Memories（添加/批量/列表/清空）→ Search（搜索/评分）→ Management（统计/导出/备份）→ Relations（关联/解除关联）→ 增量 TF-IDF
+
+## GPU 加速要求
+
+当前系统 **纯 CPU 运行**，搜索 ~400ms。如需 GPU 加速：
+
+| 要求 | 最低配置 | 推荐配置 |
+|------|---------|---------|
+| GPU | GTX 1060 以上 | RTX 2060+ |
+| 显存 | >2GB | >6GB |
+| CUDA 驱动 | ≥11.0 | ≥12.x |
+
+低于 GTX 1060（如 GT 430 / 1GB VRAM）**不建议开启 GPU**，数据传输开销 > 计算加速收益。
+
+启用：`pip install torch --index-url https://download.pytorch.org/whl/cu118`（替换 CPU 版 PyTorch）
+
+## 打包分享（pip 包）
+
+可将此系统打包为 pip 安装包，分享给同事：
+
+```
+vector_memory/
+├── src/vector_memory/
+│   ├── __init__.py      # 暴露所有 API
+│   ├── __main__.py      # python -m vector_memory
+│   ├── cli.py           # 命令行入口
+│   ├── core.py / storage.py / search.py / management.py
+├── tests/
+├── pyproject.toml       # 打包配置
+└── README.md
+```
+
+安装方式：
+```bash
+# 直接装
+pip install git+https://github.com/wufeidang/vector-memory.git
+
+# 本地开发
+cd vector_memory && pip install -e .
+```
+
+装好后别人就能用：
+```bash
+vector-memory add "消防泵启动压力0.6MPa" --category fire
+vector-memory search 消防
+```
+
+Python 调用：
+```python
+from vector_memory import add_memory, search_memories
+add_memory({"text": "NVR硬盘故障记录"})
+```
+
+## 典型使用场景
+
+| 场景 | 说明 | 示例 |
+|------|------|------|
+| 故障知识库 | 记录设备故障及解决方案，按意思搜索 | `search 画面暗` → "调整红外灯亮度到80%" |
+| SOP 文档库 | 存操作规程，搜流程 | `search 困人救援` → 电梯救援步骤 |
+| 巡检日志库 | 每日记录异常，月末回顾 | `search 消防栓` → 近30天记录 |
+| 多项目隔离 | 用集合区分项目 | `--collection monitor` / `--collection fire` |
+
+## 与 Hermes 原生记忆的区别
+
+| 维度 | Hermes 原生记忆 | Vector-Memory |
+|------|----------------|---------------|
+| 用途 | AI 记关于你的事 | **你自己**记专业知识 |
+| 容量 | ~2,200 字符 | 无限（硬盘） |
+| 搜索 | 关键词匹配 | 语义搜索 |
+| 谁控制 | AI 自动管理 | **你**主动控制 |
+| 可分享 | ❌ 绑死 Hermes | ✅ pip 包分享 |
+| 自动注入 | ✅ 每次对话 | ❌ 需主动查询 |
+
+**最佳搭配**：Hermes 记忆存「你的偏好」（10+条），Vector-Memory 存「你的专业知识」（几百上千条）。
 
 ## 性能指标
 
