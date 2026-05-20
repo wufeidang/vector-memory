@@ -1,0 +1,8 @@
+chromadb>=0.5.0
+sentence-transformers>=2.2.0
+torch>=2.0.0
+scikit-learn>=1.0.0
+modelscope>=1.0.0
+watchdog>=3.0.0
+flask>=2.0.0
+pytest>=7.0.0

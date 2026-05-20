@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# 旧备份（不进版本库）
+vector_memory_old.py
+
+# 本地环境
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统
+Thumbs.db
+.DS_Store
