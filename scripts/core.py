@@ -78,22 +78,17 @@ def _check_local_model(model_name=MODEL_NAME):
         if os.path.exists(path) and os.path.isdir(path):
             return path
     
-    # 扫描目录查找匹配
-    for base_dir in [os.path.join(modelscope_base, "hub"), 
-                     os.path.join(modelscope_base, "AI-ModelScope")]:
-        if not os.path.exists(base_dir):
-            continue
-        for root, dirs, files in os.walk(base_dir):
-            depth = root.replace(base_dir, "").count(os.sep)
-            if depth > 3:
+    # 扫描整个 modelscope 目录查找匹配（无深度限制）
+    if os.path.exists(modelscope_base):
+        for root, dirs, files in os.walk(modelscope_base):
+            # 跳过临时目录和锁文件
+            if "._____temp" in root or ".lock" in root or "__pycache__" in root:
                 continue
             for d in dirs:
-                if short in d or short.replace(".", "_") in d:
+                # 精确匹配模型名（支持点号和下划线变体）
+                if short == d or short.replace(".", "_") == d:
                     full_path = os.path.join(root, d)
-                    # 验证是有效的模型目录
-                    if (os.path.exists(os.path.join(full_path, "config.json")) or
-                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
-                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
+                    if os.path.isdir(full_path):
                         return full_path
     
     return None
@@ -139,36 +134,18 @@ def _find_downloaded_model():
         if os.path.exists(path) and os.path.isdir(path):
             return path
     
-    # 扫描 hub 目录查找匹配
-    hub_dir = os.path.join(modelscope_base, "hub")
-    if os.path.exists(hub_dir):
-        for root, dirs, files in os.walk(hub_dir):
-            # 限制深度，避免扫描太深
-            depth = root.replace(hub_dir, "").count(os.sep)
-            if depth > 3:
+    # 扫描整个 modelscope 目录查找匹配（无深度限制）
+    if os.path.exists(modelscope_base):
+        for root, dirs, files in os.walk(modelscope_base):
+            # 跳过临时目录和锁文件
+            if "._____temp" in root or ".lock" in root or "__pycache__" in root:
                 continue
             for d in dirs:
-                if model_short in d or model_short.replace(".", "_") in d:
+                # 匹配模型名（支持点号和下划线变体）
+                if model_short == d or model_short.replace(".", "_") == d:
                     full_path = os.path.join(root, d)
-                    # 验证是有效的模型目录（有 config.json 或 model_file.txt）
-                    if (os.path.exists(os.path.join(full_path, "config.json")) or
-                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
-                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
-                        return full_path
-    
-    # 扫描 AI-ModelScope 目录
-    ai_dir = os.path.join(modelscope_base, "AI-ModelScope")
-    if os.path.exists(ai_dir):
-        for root, dirs, files in os.walk(ai_dir):
-            depth = root.replace(ai_dir, "").count(os.sep)
-            if depth > 2:
-                continue
-            for d in dirs:
-                if model_short in d or model_short.replace(".", "_") in d:
-                    full_path = os.path.join(root, d)
-                    if (os.path.exists(os.path.join(full_path, "config.json")) or
-                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
-                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
+                    # 只要目录存在就返回，不验证内容
+                    if os.path.isdir(full_path):
                         return full_path
     
     return None
@@ -185,15 +162,28 @@ def _get_model(model_path=None):
             if path is None:
                 from modelscope.hub.snapshot_download import snapshot_download
                 print("✅ 下载模型: %s" % MODEL_NAME, file=sys.stderr)
+                print("   目标目录: %s" % MODEL_DIR, file=sys.stderr)
                 try:
                     snapshot_download(MODEL_NAME, local_dir=MODEL_DIR)
                 except Exception as e:
                     print("❌ 模型下载失败: %s" % str(e), file=sys.stderr)
                     raise RuntimeError("模型下载失败: %s" % str(e))
                 # After download, scan the directory to find the actual model path
+                print("   扫描查找模型路径...", file=sys.stderr)
                 path = _find_downloaded_model()
                 if path is None:
+                    # Debug: list what's actually in the cache
+                    modelscope_base = os.path.expanduser("~/.cache/modelscope")
+                    print("   DEBUG: ~/.cache/modelscope 内容:", file=sys.stderr)
+                    if os.path.exists(modelscope_base):
+                        for root, dirs, files in os.walk(modelscope_base):
+                            depth = root.replace(modelscope_base, "").count(os.sep)
+                            if depth > 3:
+                                continue
+                            indent = "     " * depth
+                            print("   %s%s/" % (indent, os.path.basename(root)), file=sys.stderr)
                     raise RuntimeError("模型下载后仍无法找到路径，请检查 ~/.cache/modelscope")
+                print("   找到模型: %s" % path, file=sys.stderr)
             print("✅ 加载嵌入模型: %s" % path, file=sys.stderr)
             try:
                 _model = SentenceTransformer(path, device="cpu")

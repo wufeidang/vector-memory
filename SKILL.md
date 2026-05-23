@@ -223,6 +223,12 @@ except AttributeError as e:
 
 **间歇性错误诊断**: `references/ci-test-intermittent-model-loading-2026-05-23.md` — 偶发模型加载错误（竞争条件/磁盘I/O）的诊断与重试模式。
 
+**CI 首次运行模型下载路径查找**（2026-05-23 第二次修复）：
+- 问题：`snapshot_download` 下载后 `_get_preferred_model()` 仍找不到路径
+- 原因：ModelScope 下载路径存在多种变体（带下划线、子目录等）
+- 修复：新增 `_find_downloaded_model()` 函数，递归扫描 `~/.cache/modelscope` 目录查找实际路径
+- 验证：19/19 测试通过 ✓
+
 ### 0.1 `list_collections()` 返回格式陷阱（2026-05-23 重要）
 
 **问题**: `list_collections()` 返回的是**字典列表** `[{"name": "memories", "count": 564}]`，而非简单的字符串列表 `["memories"]`。
