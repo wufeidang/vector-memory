@@ -76,16 +76,23 @@ def _check_local_model(model_name=MODEL_NAME):
 
 
 def _get_preferred_model():
-    # 检查多个可能路径
+    # 检查多个可能路径（修复 Windows 路径问题）
     model_short = MODEL_NAME.split("/")[-1]
+    modelscope_base = os.path.expanduser("~/.cache/modelscope")
     candidates = [
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "hub", MODEL_DIR.replace(os.path.expanduser("~/.cache/modelscope"), "").lstrip("/"), MODEL_NAME.replace(".", "_")),
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "hub", "AI-ModelScope", model_short),
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "AI-ModelScope", model_short),
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "hub", "AI-ModelScope", model_short.replace(".", "_")),
+        # 标准路径：hub/AI-ModelScope/model-name
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", model_short),
+        # 替代路径：AI-ModelScope/model-name（无 hub）
+        os.path.join(modelscope_base, "AI-ModelScope", model_short),
+        # 带下划线的模型名（某些下载工具会替换点）
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", model_short.replace(".", "_")),
+        os.path.join(modelscope_base, "AI-ModelScope", model_short.replace(".", "_")),
+        # 直接路径检查
+        os.path.join(modelscope_base, "hub", MODEL_NAME.replace("/", os.sep).replace(".", "_")),
+        os.path.join(modelscope_base, MODEL_NAME.replace("/", os.sep).replace(".", "_")),
     ]
     # 规范化路径
-    candidates = [os.path.abspath(os.path.expanduser(p)) for p in candidates]
+    candidates = [os.path.abspath(p) for p in candidates]
     for path in candidates:
         if os.path.exists(path) and os.path.isdir(path):
             return path
@@ -102,14 +109,23 @@ def _get_model(model_path=None):
             path = model_path or _get_preferred_model()
             if path is None:
                 from modelscope.hub.snapshot_download import snapshot_download
-                print("\u2705 下载模型: %s" % MODEL_NAME, file=sys.stderr)
-                snapshot_download(MODEL_NAME, local_dir=MODEL_DIR)
+                print("✅ 下载模型: %s" % MODEL_NAME, file=sys.stderr)
+                try:
+                    snapshot_download(MODEL_NAME, local_dir=MODEL_DIR)
+                except Exception as e:
+                    print("❌ 模型下载失败: %s" % str(e), file=sys.stderr)
+                    raise RuntimeError("模型下载失败: %s" % str(e))
                 path = _get_preferred_model()
-            print("\u2705 加载嵌入模型: %s" % path, file=sys.stderr)
-            _model = SentenceTransformer(path, device="cpu")
-            _model.max_seq_length = 512
+                if path is None:
+                    raise RuntimeError("模型下载后仍无法找到路径，请检查 ~/.cache/modelscope")
+            print("✅ 加载嵌入模型: %s" % path, file=sys.stderr)
+            try:
+                _model = SentenceTransformer(path, device="cpu")
+                _model.max_seq_length = 512
+            except Exception as e:
+                print("❌ 模型加载失败: %s" % str(e), file=sys.stderr)
+                raise RuntimeError("模型加载失败: %s" % str(e))
     return _model
-
 
 def _init_tfidf_vectorizer():
     global _vectorizer

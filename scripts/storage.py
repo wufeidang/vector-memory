@@ -108,6 +108,8 @@ def add_memory(args):
 
     collection = _get_collection(collection_name)
     model = _get_model()
+    if model is None:
+        return {"success": False, "message": "嵌入模型加载失败，请检查模型路径"}
     memory_id = str(int(time.time() * 1000))
 
     metadata.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
@@ -154,6 +156,8 @@ def add_batch(args):
         return {"success": False, "message": "texts 不能为空"}
 
     model = _get_model()
+    if model is None:
+        return {"success": False, "message": "嵌入模型加载失败，请检查模型路径"}
     collection = _get_collection(collection_name)
     try:
         embeddings = model.encode(texts).tolist()
@@ -188,6 +192,8 @@ def add_with_chunks(args):
         return {"success": False, "message": "内容不能为空"}
 
     model = _get_model()
+    if model is None:
+        return {"success": False, "message": "嵌入模型加载失败，请检查模型路径"}
     collection = _get_collection(collection_name)
     metadata.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
 
