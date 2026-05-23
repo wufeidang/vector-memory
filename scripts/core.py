@@ -162,28 +162,15 @@ def _get_model(model_path=None):
             if path is None:
                 from modelscope.hub.snapshot_download import snapshot_download
                 print("✅ 下载模型: %s" % MODEL_NAME, file=sys.stderr)
-                print("   目标目录: %s" % MODEL_DIR, file=sys.stderr)
                 try:
-                    snapshot_download(MODEL_NAME, local_dir=MODEL_DIR)
+                    # snapshot_download 返回实际下载路径，直接使用
+                    path = snapshot_download(MODEL_NAME, local_dir=MODEL_DIR)
+                    print("   下载路径: %s" % path, file=sys.stderr)
                 except Exception as e:
                     print("❌ 模型下载失败: %s" % str(e), file=sys.stderr)
                     raise RuntimeError("模型下载失败: %s" % str(e))
-                # After download, scan the directory to find the actual model path
-                print("   扫描查找模型路径...", file=sys.stderr)
-                path = _find_downloaded_model()
-                if path is None:
-                    # Debug: list what's actually in the cache
-                    modelscope_base = os.path.expanduser("~/.cache/modelscope")
-                    print("   DEBUG: ~/.cache/modelscope 内容:", file=sys.stderr)
-                    if os.path.exists(modelscope_base):
-                        for root, dirs, files in os.walk(modelscope_base):
-                            depth = root.replace(modelscope_base, "").count(os.sep)
-                            if depth > 3:
-                                continue
-                            indent = "     " * depth
-                            print("   %s%s/" % (indent, os.path.basename(root)), file=sys.stderr)
-                    raise RuntimeError("模型下载后仍无法找到路径，请检查 ~/.cache/modelscope")
-                print("   找到模型: %s" % path, file=sys.stderr)
+                if path is None or not os.path.exists(path):
+                    raise RuntimeError("模型下载失败：返回路径无效")
             print("✅ 加载嵌入模型: %s" % path, file=sys.stderr)
             try:
                 _model = SentenceTransformer(path, device="cpu")
@@ -215,14 +202,16 @@ def _get_reranker():
             reranker_path = _check_local_model(reranker_name)
             if reranker_path is None:
                 from modelscope.hub.snapshot_download import snapshot_download
-                print("\u2705 下载 reranker: %s" % reranker_name, file=sys.stderr)
-                snapshot_download(reranker_name, local_dir=MODEL_DIR)
-                reranker_path = _check_local_model(reranker_name)
-            print("\u2705 加载 reranker: %s" % reranker_path, file=sys.stderr)
+                print("✅ 下载 reranker: %s" % reranker_name, file=sys.stderr)
+                # 直接使用 snapshot_download 返回值
+                reranker_path = snapshot_download(reranker_name, local_dir=MODEL_DIR)
+                if reranker_path is None or not os.path.exists(reranker_path):
+                    raise RuntimeError("reranker 下载失败")
+                print("   下载路径: %s" % reranker_path, file=sys.stderr)
+            print("✅ 加载 reranker: %s" % reranker_path, file=sys.stderr)
             _reranker = CrossEncoder(reranker_path, device="cpu")
             _reranker_model_path = reranker_path
     return _reranker
-
 
 def _sigmoid_to_score_100(score):
     return round(50 * (1 + math.tanh(score * 2)), 2)
