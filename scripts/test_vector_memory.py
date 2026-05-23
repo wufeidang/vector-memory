@@ -46,15 +46,18 @@ class TestCollections:
     def test_list_collections(self, vm):
         result = vm.list_collections()
         assert result.get("success")
-        assert "memories" in result.get("collections", [])
+        collections = result.get("collections", [])
+        assert any(c.get("name") == "memories" for c in collections)
 
     def test_create_and_delete_collection(self, vm, test_collection):
         result = vm.list_collections()
-        assert test_collection in result.get("collections", [])
+        collections = result.get("collections", [])
+        assert any(c.get("name") == test_collection for c in collections)
         result = vm.delete_collection({"name": test_collection})
         assert result.get("success")
         result = vm.list_collections()
-        assert test_collection not in result.get("collections", [])
+        collections = result.get("collections", [])
+        assert not any(c.get("name") == test_collection for c in collections)
 
     def test_create_duplicate(self, vm):
         result = vm.create_collection({"name": "memories"})
