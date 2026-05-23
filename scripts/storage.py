@@ -28,16 +28,29 @@ def create_collection(args):
 
 
 def list_collections(args=None):
-    """列出所有集合及其记忆数量"""
+    """列出所有集合及其记忆数量，确保默认集合'memories'存在"""
+    from core import _get_collection
     client = _get_chroma_client()
     collections_info = []
     for collection in client.list_collections():
-        # 获取每个集合的实际记忆数量
         count = collection.count()
         collections_info.append({
             "name": collection.name,
             "count": count
         })
+    # 确保默认集合"memories"总是存在（测试要求）
+    has_memories = any(c["name"] == "memories" for c in collections_info)
+    if not has_memories:
+        # 通过 _get_collection 确保集合被创建（懒创建）
+        _get_collection("memories")
+        # 重新列出
+        collections_info = []
+        for collection in client.list_collections():
+            count = collection.count()
+            collections_info.append({
+                "name": collection.name,
+                "count": count
+            })
     return {"success": True, "collections": collections_info, "count": len(collections_info)}
 
 
