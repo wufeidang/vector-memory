@@ -62,16 +62,40 @@ def _get_collection(collection_name=None):
 
 
 def _check_local_model(model_name=MODEL_NAME):
+    """检查本地是否有已下载的模型，使用扫描方式查找"""
     short = model_name.split("/")[-1]
-    candidates = [
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "hub", "AI-ModelScope", short),
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "AI-ModelScope", short),
-        os.path.join(os.path.expanduser("~/.cache/modelscope"), "hub", "AI-ModelScope", short.replace(".", "_")),
+    modelscope_base = os.path.expanduser("~/.cache/modelscope")
+    
+    # 首先检查标准路径
+    standard_paths = [
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", short),
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", short.replace(".", "_")),
+        os.path.join(modelscope_base, "AI-ModelScope", short),
+        os.path.join(modelscope_base, "AI-ModelScope", short.replace(".", "_")),
     ]
-    for path in candidates:
-        path = os.path.abspath(os.path.expanduser(path))
+    for path in standard_paths:
+        path = os.path.abspath(path)
         if os.path.exists(path) and os.path.isdir(path):
             return path
+    
+    # 扫描目录查找匹配
+    for base_dir in [os.path.join(modelscope_base, "hub"), 
+                     os.path.join(modelscope_base, "AI-ModelScope")]:
+        if not os.path.exists(base_dir):
+            continue
+        for root, dirs, files in os.walk(base_dir):
+            depth = root.replace(base_dir, "").count(os.sep)
+            if depth > 3:
+                continue
+            for d in dirs:
+                if short in d or short.replace(".", "_") in d:
+                    full_path = os.path.join(root, d)
+                    # 验证是有效的模型目录
+                    if (os.path.exists(os.path.join(full_path, "config.json")) or
+                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
+                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
+                        return full_path
+    
     return None
 
 
@@ -99,6 +123,57 @@ def _get_preferred_model():
     return None
 
 
+def _find_downloaded_model():
+    """扫描目录找到实际下载的模型路径（用于 snapshot_download 后）"""
+    model_short = MODEL_NAME.split("/")[-1]
+    modelscope_base = os.path.expanduser("~/.cache/modelscope")
+    
+    # 首先检查标准路径
+    standard_paths = [
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", model_short),
+        os.path.join(modelscope_base, "hub", "AI-ModelScope", model_short.replace(".", "_")),
+        os.path.join(modelscope_base, "AI-ModelScope", model_short),
+        os.path.join(modelscope_base, "AI-ModelScope", model_short.replace(".", "_")),
+    ]
+    for path in standard_paths:
+        if os.path.exists(path) and os.path.isdir(path):
+            return path
+    
+    # 扫描 hub 目录查找匹配
+    hub_dir = os.path.join(modelscope_base, "hub")
+    if os.path.exists(hub_dir):
+        for root, dirs, files in os.walk(hub_dir):
+            # 限制深度，避免扫描太深
+            depth = root.replace(hub_dir, "").count(os.sep)
+            if depth > 3:
+                continue
+            for d in dirs:
+                if model_short in d or model_short.replace(".", "_") in d:
+                    full_path = os.path.join(root, d)
+                    # 验证是有效的模型目录（有 config.json 或 model_file.txt）
+                    if (os.path.exists(os.path.join(full_path, "config.json")) or
+                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
+                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
+                        return full_path
+    
+    # 扫描 AI-ModelScope 目录
+    ai_dir = os.path.join(modelscope_base, "AI-ModelScope")
+    if os.path.exists(ai_dir):
+        for root, dirs, files in os.walk(ai_dir):
+            depth = root.replace(ai_dir, "").count(os.sep)
+            if depth > 2:
+                continue
+            for d in dirs:
+                if model_short in d or model_short.replace(".", "_") in d:
+                    full_path = os.path.join(root, d)
+                    if (os.path.exists(os.path.join(full_path, "config.json")) or
+                        os.path.exists(os.path.join(full_path, "model_file.txt")) or
+                        os.path.exists(os.path.join(full_path, "sentence_bert_config.json"))):
+                        return full_path
+    
+    return None
+
+
 def _get_model(model_path=None):
     global _model
     if _model is not None:
@@ -115,7 +190,8 @@ def _get_model(model_path=None):
                 except Exception as e:
                     print("❌ 模型下载失败: %s" % str(e), file=sys.stderr)
                     raise RuntimeError("模型下载失败: %s" % str(e))
-                path = _get_preferred_model()
+                # After download, scan the directory to find the actual model path
+                path = _find_downloaded_model()
                 if path is None:
                     raise RuntimeError("模型下载后仍无法找到路径，请检查 ~/.cache/modelscope")
             print("✅ 加载嵌入模型: %s" % path, file=sys.stderr)

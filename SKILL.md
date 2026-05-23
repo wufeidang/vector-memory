@@ -173,7 +173,7 @@ python vector_memory.py restore backup=backup_20260520_200000
 | `created_at` | **`metadata.created_at`** | 时间戳埋在第2层 |
 | `collection` | **`metadata.collection`** | 集合名埋在第2层 |
 
-**修复模式**：
+**修复模式**:
 ```python
 # 模板中使用
 {{ mem.text }}  {# 不是 mem.content #}
@@ -190,6 +190,38 @@ for m in memories:
 ```
 
 详细对照：`references/web-ui-v4-api-patterns.md`（含6个排查清单）
+
+### 0.0 模型加载失败陷阱（2026-05-23 重要）
+
+**问题**: `_get_model()` 返回 `None` 时，后续调用 `model.encode()` 触发 `AttributeError: 'NoneType' object has no attribute 'parameters'`。
+
+**根本原因**:
+1. 模型路径查找失败（路径构造 bug、模型未下载）
+2. 模型下载/加载时发生异常但未抛出
+3. 存储函数未检查模型返回值
+
+**修复模式**:
+```python
+# 在调用模型编码前检查
+model = _get_model()
+if model is None:
+    return {"success": False, "message": "嵌入模型加载失败，请检查模型路径"}
+
+# 或在使用前验证
+try:
+    embeddings = model.encode(texts).tolist()
+except AttributeError as e:
+    return {"success": False, "message": f"模型编码失败: {e}"}
+```
+
+**路径查找注意事项**:
+- Windows/Linux 路径分隔符不同（`os.sep`）
+- 模型名中的点可能被替换为下划线（`bge-base-zh-v1.5` → `bge-base-zh-v1_5`）
+- ModelScope 下载路径可能有多种变体
+
+**详细修复记录**: `references/ci-test-model-loading-fix-2026-05-23.md`
+
+**间歇性错误诊断**: `references/ci-test-intermittent-model-loading-2026-05-23.md` — 偶发模型加载错误（竞争条件/磁盘I/O）的诊断与重试模式。
 
 ### 0.1 `list_collections()` 返回格式陷阱（2026-05-23 重要）
 
@@ -973,7 +1005,8 @@ python app-v3.py
 | `references/web-ui-v3-testing-report.md` | Web UI v3.0 测试报告（15/15 通过，测试用例详情） |
 | `references/web-ui-v4-build.md` | Web UI v4.0 完整构建参考（v3→v4 改进、架构、组件库、迁移指南） |
 | `references/ci-test-list-collections-fix-2026-05-23.md` | CI 测试修复记录（list_collections 懒创建问题） |
-| `references/ci-test-model-loading-fix-2026-05-23.md` | CI 测试修复记录（模型加载失败导致 AttributeError） |
+| `references/ci-test-model-loading-fix-2026-05-23.md` | **CI 测试修复记录（模型加载失败导致 AttributeError）** |
+| `references/ci-test-intermittent-model-loading-2026-05-23.md` | **CI 测试诊断记录（偶发模型加载错误：竞争条件/磁盘I/O）** |
 | `references/ci-push-verified-2026-05-23.md` | CI/CD 推送验证记录（Windows 环境） |
 | `references/web-ui-v4-api-patterns.md` | **Web UI v4.0 API 调用模式**（args 字典参数、返回值对照、ChromaDB 直接调用） |
 | `references/web-ui-backup-list-debug-2026-05-23.md` | **备份列表显示问题调试记录**（Jinja2 字典访问歧义） |
