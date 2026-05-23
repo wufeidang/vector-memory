@@ -151,7 +151,22 @@ def search_memories(args):
         _update_access_time(r["id"], collection)
 
     elapsed = time.time() - start
-    return {"success": True, "results": results, "count": len(results), "elapsed_ms": round(elapsed * 1000, 2)}
+    elapsed_ms = round(elapsed * 1000, 2)
+
+    # 自动记录监控数据
+    try:
+        from memory_monitor import record_search
+        record_search(
+            query=text,
+            results_count=len(results),
+            elapsed_ms=elapsed_ms,
+            source="vector_memory",
+            metadata={"top_k": top_k, "where": where}
+        )
+    except Exception:
+        pass  # 监控记录失败不影响搜索
+
+    return {"success": True, "results": results, "count": len(results), "elapsed_ms": elapsed_ms}
 
 
 def rerank_results(query, docs_scores, top_k=5):

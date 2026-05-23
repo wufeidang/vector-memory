@@ -28,9 +28,17 @@ def create_collection(args):
 
 
 def list_collections(args=None):
+    """列出所有集合及其记忆数量"""
     client = _get_chroma_client()
-    names = [c.name for c in client.list_collections()]
-    return {"success": True, "collections": names, "count": len(names)}
+    collections_info = []
+    for collection in client.list_collections():
+        # 获取每个集合的实际记忆数量
+        count = collection.count()
+        collections_info.append({
+            "name": collection.name,
+            "count": count
+        })
+    return {"success": True, "collections": collections_info, "count": len(collections_info)}
 
 
 def delete_collection(args):
