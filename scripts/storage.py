@@ -1,6 +1,7 @@
 """
 Vector-Memory 记忆系统 - 存储模块
 负责 ChromaDB 集合管理和记忆 CRUD
+集成自动摘要生成（功能3）和文件存储桥接（功能C）
 """
 import os
 import time
@@ -9,8 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from core import _get_collection, _get_model, _get_chroma_client, _current_collection_name
-from core import MEMORY_MD, CHUNK_SIZE, _sync_to_memory_md
-
+from core import MEMORY_MD, CHUNK_SIZE, _sync_to_memory_md, _summarize_if_needed
 
 
 # ============================================================
@@ -41,9 +41,7 @@ def list_collections(args=None):
     # 确保默认集合"memories"总是存在（测试要求）
     has_memories = any(c["name"] == "memories" for c in collections_info)
     if not has_memories:
-        # 通过 _get_collection 确保集合被创建（懒创建）
         _get_collection("memories")
-        # 重新列出
         collections_info = []
         for collection in client.list_collections():
             count = collection.count()
@@ -103,6 +101,7 @@ def add_memory(args):
     text = args.get("text", "")
     metadata = args.get("metadata", {})
     collection_name = args.get("collection")
+    skip_summary = args.get("skip_summary", False)
     if not text:
         return {"success": False, "message": "记忆内容不能为空"}
 
@@ -117,13 +116,20 @@ def add_memory(args):
     metadata["device"] = metadata.get("device", "unknown")
     metadata["last_accessed"] = time.time()
 
+    # ✨ 功能3：自动生成摘要
+    if not skip_summary:
+        metadata = _summarize_if_needed(text, metadata)
+
     try:
         chunk_ids = []
         if len(text) > 500:
             for chunk in _chunk_text(text):
                 emb = model.encode(chunk).tolist()
                 cid = memory_id + "_" + str(len(chunk_ids))
-                collection.add(ids=[cid], embeddings=[emb], documents=[chunk], metadatas=[metadata])
+                chunk_meta = metadata.copy()
+                if "summary" in metadata and len(text) > 500:
+                    chunk_meta["parent_summary"] = metadata["summary"]
+                collection.add(ids=[cid], embeddings=[emb], documents=[chunk], metadatas=[chunk_meta])
                 chunk_ids.append(cid)
         else:
             emb = model.encode(text).tolist()
@@ -169,6 +175,12 @@ def add_batch(args):
     for i, m in enumerate(metadatas_list):
         meta = m or {}
         meta["batch"] = True
+        meta.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
+        if "summary" not in meta and len(texts[i]) > 500:
+            from core import _generate_summary
+            meta["summary"] = _generate_summary(texts[i])
+        elif "summary" not in meta:
+            meta["summary"] = texts[i][:200]
         metadatas.append(meta)
 
     try:
@@ -197,12 +209,19 @@ def add_with_chunks(args):
     collection = _get_collection(collection_name)
     metadata.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
 
+    # ✨ 功能3：长文档摘要
+    if "summary" not in metadata and len(text) > chunk_size:
+        metadata = _summarize_if_needed(text, metadata)
+
     chunks = list(_chunk_text(text, chunk_size, overlap))
     chunk_ids = []
     for i, chunk in enumerate(chunks):
         emb = model.encode(chunk).tolist()
         cid = str(int(time.time() * 1000)) + "_" + str(i)
-        collection.add(ids=[cid], embeddings=[emb], documents=[chunk], metadatas=[metadata])
+        chunk_meta = metadata.copy()
+        if "summary" in metadata and len(chunks) > 1:
+            chunk_meta["parent_summary"] = metadata["summary"]
+        collection.add(ids=[cid], embeddings=[emb], documents=[chunk], metadatas=[chunk_meta])
         chunk_ids.append(cid)
 
     _sync_to_memory_md(text, metadata)
@@ -292,3 +311,79 @@ def dedupe_memories(args):
                 done.add(ids[j])
                 deduped += 1
     return {"success": True, "deduped": deduped}
+
+
+# ============================================================
+# ✨ 功能C：文件存储桥接（混合存储）
+# ============================================================
+
+def add_file(args):
+    """
+    添加文件到混合存储系统。
+    支持：txt/md/csv/pdf/docx/xlsx/pptx/png/jpg/gif 等格式
+    
+    Args:
+        file_path: 本地文件路径
+        description: 文件描述（可选，对图片尤为重要）
+        category: 分类标签
+        tags: 标签列表
+        collection: 目标集合
+    """
+    from file_storage import store_file, _ensure_file_collection
+    return store_file(args)
+
+
+def list_files(args=None):
+    """
+    列出所有已索引的文件。
+    
+    Args:
+        limit: 最大数量
+        offset: 偏移量
+        collection: 过滤集合
+        file_type: 过滤文件类型
+    """
+    from file_storage import list_files
+    return list_files(args)
+
+
+def get_file(args):
+    """
+    获取文件详情和访问路径。
+    
+    Args:
+        file_id: 文件ID
+    """
+    from file_storage import get_file
+    return get_file(args)
+
+
+def delete_file(args):
+    """
+    删除文件及其索引。
+    
+    Args:
+        file_id: 文件ID
+    """
+    from file_storage import delete_file
+    return delete_file(args)
+
+
+def search_files(args):
+    """
+    在文件索引中搜索文件。
+    
+    Args:
+        text: 搜索文本
+        top_k: 返回数量
+        file_type: 按文件类型过滤
+        collection: 按集合过滤
+    """
+    from file_storage import search_files
+    return search_files(args)
+
+
+def get_file_stats(args=None):
+    """获取文件存储统计信息"""
+    from file_storage import get_file_stats
+    return get_file_stats(args)
